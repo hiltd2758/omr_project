@@ -102,22 +102,16 @@ def fill_ratio(binary_crop: np.ndarray, x, y, r):
 
 
 def recognize_answers_mcq(gray_crop, binary_crop, n_rows, n_cols, choice_labels,
-                           fill_threshold=0.35):
+                           fill_threshold=0.35, relative_ratio=None):
     """
-    Nhận dạng đáp án trắc nghiệm A/B/C/D (dùng cho Phần I) hoặc Đúng/Sai (Phần II)
-    hoặc 0-9 (Phần III, SBD, Mã đề).
-
-    n_rows: số câu (số hàng)
-    n_cols: số lựa chọn (số cột), ví dụ 4 cho A/B/C/D
-    choice_labels: danh sách nhãn cột, ví dụ ['A','B','C','D']
-
-    Trả về: list kết quả mỗi câu -> label được chọn (hoặc None nếu không tô/tô nhiều hơn 1)
+    Nhận dạng đáp án trắc nghiệm A/B/C/D (dùng cho Phần I).
+    Cải tiến v2: Dùng relative thresholding để giảm false positive do vết chì/bóng đổ.
     """
+    RELATIVE_RATIO = relative_ratio if relative_ratio is not None else 0.65
+
     circles = detect_circles(gray_crop)
     grid_rows = cluster_to_grid(circles)
 
-    # Nếu dư hàng (do header text/nhiễu bị nhận nhầm thành vòng tròn),
-    # giữ lại n_rows hàng CUỐI vì lưới đáp án luôn nằm dưới cùng của vùng crop.
     if len(grid_rows) > n_rows:
         grid_rows = grid_rows[-n_rows:]
     elif len(grid_rows) < n_rows:
@@ -132,16 +126,140 @@ def recognize_answers_mcq(gray_crop, binary_crop, n_rows, n_cols, choice_labels,
 
         ratios = [fill_ratio(binary_crop, x, y, r) for (x, y, r) in row]
         max_ratio = max(ratios)
-        chosen_idx = ratios.index(max_ratio) if max_ratio >= fill_threshold else None
 
-        # Kiểm tra tô nhiều đáp án (lỗi thí sinh) - nếu >1 ô vượt ngưỡng
-        above = [i for i, r in enumerate(ratios) if r >= fill_threshold]
+        if max_ratio < fill_threshold:
+            results.append(None)
+            continue
+
+        relative_cutoff = RELATIVE_RATIO * max_ratio
+        above = [i for i, r in enumerate(ratios)
+                 if r >= fill_threshold and r >= relative_cutoff]
+
         if len(above) > 1:
-            results.append("MULTI")  # tô nhiều hơn 1 đáp án
-        elif chosen_idx is not None:
-            results.append(choice_labels[chosen_idx])
+            results.append("MULTI")
+        elif len(above) == 1:
+            results.append(choice_labels[above[0]])
         else:
-            results.append(None)  # bỏ trống
+            results.append(None)
+
+    return results
+
+
+def _detect_dung_sai_cascade(gray, n_rows=4, n_cols=2, row_tol=12):
+    """
+    Thử nhiều bộ param Hough theo thứ tự, chọn bộ cho nhiều hàng đúng nhất.
+    Với những hàng vẫn sai (len != n_cols), dùng tọa độ x từ các hàng đúng để suy ra.
+    """
+    PARAM_SETS = [
+        dict(min_dist=20, param2=18, min_r=5, max_r=13, dedup_dist=14),
+        dict(min_dist=18, param2=15, min_r=5, max_r=13, dedup_dist=12),
+        dict(min_dist=22, param2=20, min_r=5, max_r=12, dedup_dist=16),
+        dict(min_dist=15, param2=12, min_r=5, max_r=14, dedup_dist=10),
+        dict(min_dist=20, param2=25, min_r=5, max_r=13, dedup_dist=14),
+    ]
+
+    best_rows = None
+    best_score = -1
+
+    for params in PARAM_SETS:
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, dp=1,
+            minDist=params["min_dist"], param1=50, param2=params["param2"],
+            minRadius=params["min_r"], maxRadius=params["max_r"])
+        if circles is None:
+            continue
+        raw = [(int(round(x)), int(round(y)), int(round(r))) for x, y, r in circles[0]]
+        raw = dedupe_circles(raw, min_dist=params["dedup_dist"])
+        grid_rows = cluster_to_grid(raw, row_tol=row_tol)
+        if len(grid_rows) > n_rows:
+            grid_rows = grid_rows[-n_rows:]
+        score = sum(1 for r in grid_rows if len(r) == n_cols)
+        if score > best_score:
+            best_score = score
+            best_rows = grid_rows
+
+    if best_rows is None:
+        return []
+
+    # Suy ra tọa độ x chuẩn từ các hàng detect đúng
+    good_rows = [r for r in best_rows if len(r) == n_cols]
+    if good_rows:
+        col_xs = [
+            int(np.mean([r[ci][0] for r in good_rows]))
+            for ci in range(n_cols)
+        ]
+        avg_r = int(np.mean([c[2] for r in good_rows for c in r]))
+    else:
+        col_xs = None
+        avg_r = 8
+
+    # Với hàng sai, reconstruct bằng tọa độ x chuẩn + y trung bình của hàng đó
+    fixed_rows = []
+    for row in best_rows:
+        if len(row) == n_cols:
+            fixed_rows.append(row)
+        elif col_xs is not None and len(row) > 0:
+            avg_y = int(np.mean([c[1] for c in row]))
+            fixed_rows.append([(cx, avg_y, avg_r) for cx in col_xs])
+        else:
+            fixed_rows.append(row)  # vẫn sai, để caller xử lý
+
+    return fixed_rows
+
+
+def recognize_answers_dung_sai(gray_crop, binary_crop, fill_threshold=0.18):
+    """
+    Nhận dạng Phần II (Đúng/Sai) — 4 hàng x 2 cột.
+    - Cascade param Hough để tối đa hàng detect đúng.
+    - Reconstruct hàng sai bằng tọa độ x từ hàng đúng.
+    - Winner-takes-all với margin check thay vì MULTI.
+    """
+    N_ROWS, N_COLS = 4, 2
+    LABELS = ["Đúng", "Sai"]
+    MARGIN_RATIO = 0.20  # winner phải hơn ô kia ít nhất 20%
+
+    h, w = binary_crop.shape
+    cell_h = h / N_ROWS
+    cell_w = w / N_COLS
+
+    grid_rows = _detect_dung_sai_cascade(gray_crop, n_rows=N_ROWS, n_cols=N_COLS)
+    if len(grid_rows) > N_ROWS:
+        grid_rows = grid_rows[-N_ROWS:]
+
+    results = []
+    for ri in range(N_ROWS):
+        row = grid_rows[ri] if ri < len(grid_rows) else []
+
+        if len(row) == N_COLS:
+            ratios = [fill_ratio(binary_crop, x, y, r) for (x, y, r) in row]
+        else:
+            # Fallback grid nếu vẫn không detect được
+            ratios = []
+            for ci in range(N_COLS):
+                y1 = int(ri * cell_h); y2 = int((ri + 1) * cell_h)
+                x1 = int(ci * cell_w); x2 = int((ci + 1) * cell_w)
+                cell = binary_crop[y1:y2, x1:x2]
+                ch, cw = cell.shape
+                cy, cx = ch // 2, cw // 2
+                rad = int(min(ch, cw) * 0.35)
+                mask = np.zeros((ch, cw), dtype=np.uint8)
+                cv2.circle(mask, (cx, cy), rad, 255, -1)
+                region = cv2.bitwise_and(cell, mask)
+                total = cv2.countNonZero(mask)
+                ratios.append(cv2.countNonZero(region) / float(total) if total > 0 else 0)
+
+        max_r = max(ratios)
+        if max_r < fill_threshold:
+            results.append(None)
+            continue
+
+        winner = ratios.index(max_r)
+        other_max = max(r for i, r in enumerate(ratios) if i != winner)
+
+        if other_max >= fill_threshold and (max_r - other_max) < MARGIN_RATIO * max_r:
+            results.append("MULTI")
+        else:
+            results.append(LABELS[winner])
 
     return results
 def recognize_full_sheet(segments: dict, fill_threshold=0.35) -> dict:
@@ -171,19 +289,28 @@ def recognize_full_sheet(segments: dict, fill_threshold=0.35) -> dict:
     final["phan1"] = {i + 1: a for i, a in enumerate(phan1_all)}
 
     # ---- Phần II: 4 block, mỗi block 2 câu x 4 ý x Đúng/Sai ----
+    # Thêm morphological opening + CLAHE mạnh hơn cho Phần II (nhỏ, tối).
     phan2_all = {}
+    kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    clahe_strong = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(4, 4))
     for b in range(1, 5):
         crop = segments[f"phan2_block{b}"]
-        pre = preprocess_pipeline(crop)
+        gray_p2 = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if len(crop.shape) == 3 else crop
+        gray_p2 = cv2.GaussianBlur(gray_p2, (3, 3), 0)
+        gray_p2 = clahe_strong.apply(gray_p2)
+        binary_p2 = cv2.adaptiveThreshold(
+            gray_p2, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV, blockSize=15, C=6
+        )
+        binary_cleaned = cv2.morphologyEx(binary_p2, cv2.MORPH_OPEN, kernel_open)
+        pre = {"gray": gray_p2, "binary": binary_p2}
         h, w = pre["gray"].shape
         half = w // 2
         for side, (x1, x2) in enumerate([(0, half), (half, w)]):
             sub_gray = pre["gray"][:, x1:x2]
-            sub_bin = pre["binary"][:, x1:x2]
-            ans = recognize_answers_mcq(sub_gray, sub_bin,
-                                        n_rows=4, n_cols=2,
-                                        choice_labels=["Đúng", "Sai"],
-                                        fill_threshold=0.33)
+            sub_bin  = binary_cleaned[:, x1:x2]
+            ans = recognize_answers_dung_sai(sub_gray, sub_bin,
+                                               fill_threshold=0.18)
             cau_index = (b - 1) * 2 + side + 1
             phan2_all[cau_index] = ans
     final["phan2"] = phan2_all
