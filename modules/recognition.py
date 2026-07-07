@@ -215,7 +215,7 @@ def recognize_answers_dung_sai(gray_crop, binary_crop, fill_threshold=0.18):
     - Winner-takes-all với margin check thay vì MULTI.
     """
     N_ROWS, N_COLS = 4, 2
-    LABELS = ["Đúng", "Sai"]
+    LABELS = ["D", "S"]
     MARGIN_RATIO = 0.20  # winner phải hơn ô kia ít nhất 20%
 
     h, w = binary_crop.shape
