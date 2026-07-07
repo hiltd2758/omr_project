@@ -72,6 +72,19 @@ def parse_answer_key(text_phan1, text_phan2, text_phan3):
     return key
 
 
+def answer_key_to_dataframe(key: dict) -> pd.DataFrame:
+    """Chuyển đáp án chuẩn thành DataFrame để hiển thị dạng bảng."""
+    rows = []
+    for cau, dap in sorted(key.get("phan1", {}).items()):
+        rows.append({"Phần": "I", "Câu": cau, "Đáp án": dap})
+    for cau, dap_list in sorted(key.get("phan2", {}).items()):
+        dap_str = "".join(dap_list)
+        rows.append({"Phần": "II", "Câu": cau, "Đáp án": dap_str})
+    for cau, dap in sorted(key.get("phan3", {}).items()):
+        rows.append({"Phần": "III", "Câu": cau, "Đáp án": dap})
+    return pd.DataFrame(rows)
+
+
 # ---------------------------------------------------------------------------
 # Sidebar điều hướng
 # ---------------------------------------------------------------------------
@@ -111,7 +124,11 @@ if page == "Dashboard":
     st.markdown("---")
     st.subheader("Đáp án chuẩn hiện tại")
     if st.session_state.answer_key:
-        st.json(st.session_state.answer_key)
+        st.dataframe(
+            answer_key_to_dataframe(st.session_state.answer_key),
+            use_container_width=True,
+            hide_index=True
+        )
     else:
         st.warning("Chưa thiết lập đáp án chuẩn — hệ thống vẫn nhận dạng được bài "
                     "nhưng chưa thể tính điểm. Thiết lập ở trang **Chấm bài**.")
@@ -137,6 +154,12 @@ elif page == "Chấm bài":
                 try:
                     st.session_state.answer_key = parse_answer_key_file(key_file)
                     st.success("Đã nạp đáp án chuẩn từ file.")
+                    st.subheader("Xem trước đáp án đã nạp")
+                    st.dataframe(
+                        answer_key_to_dataframe(st.session_state.answer_key),
+                        use_container_width=True,
+                        hide_index=True
+                    )
                 except Exception as e:
                     st.error(f"Lỗi đọc file đáp án: {e}")
 
@@ -241,7 +264,7 @@ elif page == "Chấm bài":
                     graded = grade_submission(result, st.session_state.answer_key)
                     graded["ten_file"] = uploaded_file.name
                     st.write("DEBUG - Chi tiết Phần I:", graded["chi_tiet"]["phan1"])
-                    st.write("DEBUG - Chi tiết Phần II:", graded["chi_tiet"]["phan2"])
+                    st.write("DEBUG - Chi tiết Phần II:", graded["chi_tiet"]["phan2"], "(Raw:", graded.get("diem_phan2_raw", 0), "→ Quy đổi:", graded["diem_phan2"], ")")
                     st.write("DEBUG - Chi tiết Phần III:", graded["chi_tiet"]["phan3"])
                     st.subheader("Điểm số")
                     g1, g2, g3, g4 = st.columns(4)
