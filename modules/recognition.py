@@ -322,8 +322,33 @@ def recognize_full_sheet(segments: dict, fill_threshold=0.35) -> dict:
     for b in range(1, 7):
         crop = segments[f"phan3_block{b}"]
         pre = preprocess_pipeline(crop)
-        phan3_all[b] = snap_grid_digits(pre["gray"], pre["binary"], n_digits=4)
+        binary = pre["binary"]
+        gray   = pre["gray"]
+        h, w   = binary.shape
+
+        # Đọc prefix (-, ,) từ 2 hàng đầu (top 18% chiều cao)
+        prefix = ""
+        top_h = int(h * 0.18)
+        top_region = binary[0:top_h, :]
+        n_special = 2
+        cell_h_sp = top_h // n_special
+        for i, label in enumerate(["-", ","]):
+            row_bin = top_region[i*cell_h_sp:(i+1)*cell_h_sp, :]
+            ratio = cv2.countNonZero(row_bin) / row_bin.size
+            print(f"Block {b} | prefix '{label}' ratio = {ratio:.4f}")
+            filled = cv2.countNonZero(row_bin)
+            total  = row_bin.size
+            if filled / total >  0.45:   # ngưỡng thấp vì ô nhỏ
+                prefix += label 
+
+        digits = read_digit_grid_fixed(binary,  n_digits=4,
+                                    n_rows=10, fill_threshold=0.35,
+                                    top_skip_ratio=0.28)
+        print(f"Block {b} | digits raw = {digits}")
+        # Relative margin: loại cột không rõ ràng
+        phan3_all[b] = prefix + digits.replace("?", "")
     final["phan3"] = phan3_all
+
 
     return final
 
@@ -343,7 +368,7 @@ def snap_grid_digits(gray_crop, binary_crop, n_digits, fill_threshold=0.33):
         grid_rows = grid_rows[-10:]  # giữ 10 hàng cuối = hàng số 0-9
     if len(grid_rows) < 10:
         return "?" * n_digits
-
+    
     # Xác định cột chuẩn bằng cách gom tọa độ x của tất cả circle trong 10 hàng
     all_circles = [c for row in grid_rows for c in row]
     all_circles_sorted = sorted(all_circles, key=lambda c: c[0])
@@ -371,28 +396,57 @@ def snap_grid_digits(gray_crop, binary_crop, n_digits, fill_threshold=0.33):
         return "?" * n_digits
 
     best_ratio = [0.0] * n_digits
+    second_ratio = [0.0] * n_digits
     digits = [None] * n_digits
+
     for digit_val, row in enumerate(grid_rows):
         for (x, y, r) in row:
             col_idx = min(range(len(col_xs)), key=lambda i: abs(col_xs[i] - x))
             ratio = fill_ratio(binary_crop, x, y, r)
-            if ratio >= fill_threshold and ratio > best_ratio[col_idx]:
+            if ratio > best_ratio[col_idx]:
+                second_ratio[col_idx] = best_ratio[col_idx]
                 best_ratio[col_idx] = ratio
                 digits[col_idx] = str(digit_val)
-
-    return "".join(d if d else "?" for d in digits)
+            elif ratio > second_ratio[col_idx]:
+                second_ratio[col_idx] = ratio
+    MARGIN = 1.8  # ô được chọn phải đậm hơn ô thứ 2 ít nhất 1.8x
+    for col_idx in range(n_digits):
+        if best_ratio[col_idx] < fill_threshold:
+            digits[col_idx] = None
+        elif second_ratio[col_idx] > 0 and best_ratio[col_idx] < MARGIN * second_ratio[col_idx]:
+            digits[col_idx] = None  # không rõ ràng → bỏ trốn   g
+    # Đọc dấu đặc biệt từ special_rows
+    prefix = ""
+    SPECIAL_LABELS = ["-", ","]
+    for i, srow in enumerate(special_rows):
+        if i >= len(SPECIAL_LABELS):
+            break
+        for (x, y, r) in srow:
+            ratio = fill_ratio(binary_crop, x, y, r)
+            if ratio >= 0.45:
+                prefix += SPECIAL_LABELS[i]
+                break
+    return prefix + "".join(d if d else "?" for d in digits)
 def read_digit_grid_fixed(binary_crop, n_digits, n_rows=10, fill_threshold=0.35,
                            top_skip_ratio=0.18):
-    """
-    Đọc lưới số 0-9 bằng cách CHIA Ô CỐ ĐỊNH thay vì dò Hough Circle.
-    Áp dụng: Phân đoạn ảnh dạng lưới đều (grid-based segmentation) - 
-    phù hợp khi ảnh đã chuẩn hóa phối cảnh nên lưới ô tròn cách đều nhau.
-
-    top_skip_ratio: bỏ qua phần trăm chiều cao phía trên (chứa ô nhập số, dấu -, dấu ,)
-                    trước khi bắt đầu lưới 0-9.
-    """
     h, w = binary_crop.shape
-    y_start = int(h * top_skip_ratio)
+
+    # Tự động tìm điểm bắt đầu lưới số bằng row projection
+    row_sums = np.sum(binary_crop, axis=1) / 255  # số pixel đen mỗi hàng y
+    min_start = int(h * 0.10)  # không tìm trong 10% đầu (header/tiêu đề)
+    max_start = int(h * 0.50)  # lưới phải bắt đầu trong nửa đầu ảnh
+
+    # Tìm vùng có nhiều pixel đen liên tục → bắt đầu lưới ô tròn
+    window = max(1, int(h * 0.04))
+    best_y = int(h * top_skip_ratio)  # fallback
+    best_score = -1
+    for y in range(min_start, max_start):
+        score = np.sum(row_sums[y:y+window])
+        if score > best_score:
+            best_score = score
+            best_y = y
+
+    y_start = best_y
     grid_h = h - y_start
     cell_h = grid_h / n_rows
     cell_w = w / n_digits
@@ -406,23 +460,18 @@ def read_digit_grid_fixed(binary_crop, n_digits, n_rows=10, fill_threshold=0.35,
         for col in range(n_digits):
             x1 = int(col * cell_w)
             x2 = int((col + 1) * cell_w)
-
             cell = binary_crop[y1:y2, x1:x2]
             ch, cw = cell.shape
             if ch == 0 or cw == 0:
                 continue
-
-            # Chỉ lấy vùng tròn ở giữa ô (tránh viền ô/đường kẻ lân cận)
             cy, cx = ch // 2, cw // 2
             radius = int(min(ch, cw) * 0.35)
             mask = np.zeros((ch, cw), dtype=np.uint8)
             cv2.circle(mask, (cx, cy), radius, 255, -1)
             region = cv2.bitwise_and(cell, mask)
-
             filled = cv2.countNonZero(region)
             total = cv2.countNonZero(mask)
             ratio = filled / float(total) if total > 0 else 0
-
             if ratio >= fill_threshold and ratio > best_ratio[col]:
                 best_ratio[col] = ratio
                 digits[col] = str(row)
