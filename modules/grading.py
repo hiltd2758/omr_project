@@ -23,20 +23,24 @@ def grade_phan1(student: dict, key: dict, diem_per_cau: float = 0.25):
     return diem, chi_tiet
 
 
+def _chuan_hoa(ky_tu):
+    ky_tu = str(ky_tu).strip().upper()
+    return "D" if ky_tu in ("D", "Đ") else ky_tu
+
 def grade_phan2(student: dict, key: dict):
     chi_tiet, diem = {}, 0.0
     for cau, dap_an in key.items():
-        tra_loi = student.get(cau, [])
+        dap_an_chuan = [_chuan_hoa(x) for x in dap_an]
+        tra_loi = [_chuan_hoa(x) for x in student.get(cau, [])]
         so_y_dung = sum(
-            1 for i, y in enumerate(dap_an)
+            1 for i, y in enumerate(dap_an_chuan)
             if i < len(tra_loi) and tra_loi[i] == y
         )
         diem_cau = PHAN2_PARTIAL.get(so_y_dung, 0.0)
         diem += diem_cau
-        chi_tiet[cau] = {"dap_an": dap_an, "tra_loi": tra_loi,
+        chi_tiet[cau] = {"dap_an": dap_an, "tra_loi": student.get(cau, []),
                           "so_y_dung": so_y_dung, "diem": diem_cau}
-    return diem, chi_tiet
-
+    return diem, chi_tiet   
 
 def grade_phan3(student: dict, key: dict, diem_per_cau: float = 0.25):
     chi_tiet, diem = {}, 0.0
@@ -57,7 +61,7 @@ def grade_submission(result: dict, answer_key: dict) -> dict:
     d1, ct1 = grade_phan1(result.get("phan1", {}), answer_key.get("phan1", {}))
     d2, ct2 = grade_phan2(result.get("phan2", {}), answer_key.get("phan2", {}))
     d3, ct3 = grade_phan3(result.get("phan3", {}), answer_key.get("phan3", {}))
-    tong_diem = round((d1 / 10.0) * 2.5 + (d2 / 8.0) * 4.0 + (d3 / 6.0) * 3.5, 2)
+    tong_diem = round((d1 / 10.0) * 2.5 + (d2 / 8.0) * 4.0 + (d3 / 1.5) * 3.5, 2)
     return {
         "sbd": result.get("sbd", "?"),
         "made": result.get("made", "?"),

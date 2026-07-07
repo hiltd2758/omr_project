@@ -240,6 +240,9 @@ elif page == "Chấm bài":
                 if st.session_state.answer_key:
                     graded = grade_submission(result, st.session_state.answer_key)
                     graded["ten_file"] = uploaded_file.name
+                    st.write("DEBUG - Chi tiết Phần I:", graded["chi_tiet"]["phan1"])
+                    st.write("DEBUG - Chi tiết Phần II:", graded["chi_tiet"]["phan2"])
+                    st.write("DEBUG - Chi tiết Phần III:", graded["chi_tiet"]["phan3"])
                     st.subheader("Điểm số")
                     g1, g2, g3, g4 = st.columns(4)
                     g1.metric("Phần I", graded["diem_phan1"])

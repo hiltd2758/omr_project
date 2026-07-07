@@ -125,6 +125,7 @@ def recognize_answers_mcq(gray_crop, binary_crop, n_rows, n_cols, choice_labels,
             continue
 
         ratios = [fill_ratio(binary_crop, x, y, r) for (x, y, r) in row]
+        print("MCQ:", ratios)
         max_ratio = max(ratios)
 
         if max_ratio < fill_threshold:
@@ -232,6 +233,7 @@ def recognize_answers_dung_sai(gray_crop, binary_crop, fill_threshold=0.18):
 
         if len(row) == N_COLS:
             ratios = [fill_ratio(binary_crop, x, y, r) for (x, y, r) in row]
+            print("DungSai:", ratios)
         else:
             # Fallback grid nếu vẫn không detect được
             ratios = []
