@@ -207,10 +207,10 @@ def snap_grid_digits(gray_crop, binary_crop, n_digits, fill_threshold=0.33):
     circles = detect_circles_small(gray_crop)
     grid_rows = cluster_to_grid(circles)
 
-    # Loại các hàng "-" và "," phía trên nếu bị lẫn (thường có rất ít circle, <n_digits)
-    grid_rows = [r for r in grid_rows if len(r) >= n_digits - 1]
-
+    # Tách riêng 2 hàng đặc biệt (dấu trừ "-", dấu phẩy ",") nằm phía trên 10 hàng số 0-9
+    special_rows = []
     if len(grid_rows) > 10:
+        special_rows = grid_rows[:len(grid_rows) - 10]
         grid_rows = grid_rows[-10:]  # giữ 10 hàng cuối = hàng số 0-9
     if len(grid_rows) < 10:
         return "?" * n_digits
