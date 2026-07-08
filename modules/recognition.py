@@ -317,36 +317,17 @@ def recognize_full_sheet(segments: dict, fill_threshold=0.35) -> dict:
             phan2_all[cau_index] = ans
     final["phan2"] = phan2_all
 
-    # ---- Phần III: 6 block, số 4 chữ số, lưới 0-9 ----
+    # ---- Phần III: 6 block, số 4 chữ số với dấu [-] và [,]
+    # Cấu trúc: Hàng 1 = dấu [-], Hàng 2 = dấu [,], Hàng 3-12 = số 0-9
     phan3_all = {}
     for b in range(1, 7):
         crop = segments[f"phan3_block{b}"]
         pre = preprocess_pipeline(crop)
-        binary = pre["binary"]
-        gray   = pre["gray"]
-        h, w   = binary.shape
-
-        # Đọc prefix (-, ,) từ 2 hàng đầu (top 18% chiều cao)
-        prefix = ""
-        top_h = int(h * 0.18)
-        top_region = binary[0:top_h, :]
-        n_special = 2
-        cell_h_sp = top_h // n_special
-        for i, label in enumerate(["-", ","]):
-            row_bin = top_region[i*cell_h_sp:(i+1)*cell_h_sp, :]
-            ratio = cv2.countNonZero(row_bin) / row_bin.size
-            print(f"Block {b} | prefix '{label}' ratio = {ratio:.4f}")
-            filled = cv2.countNonZero(row_bin)
-            total  = row_bin.size
-            if filled / total >  0.45:   # ngưỡng thấp vì ô nhỏ
-                prefix += label 
-
-        digits = read_digit_grid_fixed(binary,  n_digits=4,
-                                    n_rows=10, fill_threshold=0.35,
-                                    top_skip_ratio=0.28)
-        print(f"Block {b} | digits raw = {digits}")
-        # Relative margin: loại cột không rõ ràng
-        phan3_all[b] = prefix + digits.replace("?", "")
+        result = recognize_phan3_number(
+            pre["gray"], pre["binary"],
+            n_digits=4, fill_threshold=0.35
+        )
+        phan3_all[b] = clean_phan3_result(result)
     final["phan3"] = phan3_all
 
 
@@ -354,22 +335,15 @@ def recognize_full_sheet(segments: dict, fill_threshold=0.35) -> dict:
 
 def snap_grid_digits(gray_crop, binary_crop, n_digits, fill_threshold=0.33):
     """
-    Đọc lưới số 0-9: dùng cluster_to_grid để nhóm đúng 10 hàng (đã xử lý merge nhiễu),
-    sau đó ghép cột theo tọa độ x thực tế (không chuẩn hóa min-max toàn cục vì dễ lệch
-    khi có nhiễu ở rìa).
+    Đọc lưới số 0-9 cho SBD và Mã đề (chỉ có 10 hàng số 0-9).
     """
     circles = detect_circles_small(gray_crop)
     grid_rows = cluster_to_grid(circles)
 
-    # Tách riêng 2 hàng đặc biệt (dấu trừ "-", dấu phẩy ",") nằm phía trên 10 hàng số 0-9
-    special_rows = []
-    if len(grid_rows) > 10:
-        special_rows = grid_rows[:len(grid_rows) - 10]
-        grid_rows = grid_rows[-10:]  # giữ 10 hàng cuối = hàng số 0-9
     if len(grid_rows) < 10:
         return "?" * n_digits
     
-    # Xác định cột chuẩn bằng cách gom tọa độ x của tất cả circle trong 10 hàng
+    # Xác định cột chuẩn bằng cách gom tọa độ x của tất cả circle
     all_circles = [c for row in grid_rows for c in row]
     all_circles_sorted = sorted(all_circles, key=lambda c: c[0])
 
@@ -388,7 +362,6 @@ def snap_grid_digits(gray_crop, binary_crop, n_digits, fill_threshold=0.33):
             col_centers.append({"x": x, "xs": [x]})
 
     col_centers = sorted(col_centers, key=lambda c: c["x"])
-    # Nếu phát hiện dư/thiếu cột so với n_digits, cắt hoặc bỏ qua cột lệch nhất
     col_centers = col_centers[:n_digits] if len(col_centers) >= n_digits else col_centers
     col_xs = [c["x"] for c in col_centers]
 
@@ -409,24 +382,150 @@ def snap_grid_digits(gray_crop, binary_crop, n_digits, fill_threshold=0.33):
                 digits[col_idx] = str(digit_val)
             elif ratio > second_ratio[col_idx]:
                 second_ratio[col_idx] = ratio
-    MARGIN = 1.8  # ô được chọn phải đậm hơn ô thứ 2 ít nhất 1.8x
+    MARGIN = 1.8
     for col_idx in range(n_digits):
         if best_ratio[col_idx] < fill_threshold:
             digits[col_idx] = None
         elif second_ratio[col_idx] > 0 and best_ratio[col_idx] < MARGIN * second_ratio[col_idx]:
-            digits[col_idx] = None  # không rõ ràng → bỏ trốn   g
-    # Đọc dấu đặc biệt từ special_rows
-    prefix = ""
-    SPECIAL_LABELS = ["-", ","]
-    for i, srow in enumerate(special_rows):
-        if i >= len(SPECIAL_LABELS):
-            break
-        for (x, y, r) in srow:
-            ratio = fill_ratio(binary_crop, x, y, r)
-            if ratio >= 0.45:
-                prefix += SPECIAL_LABELS[i]
+            digits[col_idx] = None
+
+    return "".join(d if d else "?" for d in digits)
+
+
+def recognize_phan3_number(gray_crop, binary_crop, n_digits=4, fill_threshold=0.33):
+    """
+    Đọc lưới số cho Phần III với cấu trúc đặc biệt:
+    - Hàng 1 (index 0): Cột 1 = dấu [-], các cột = số
+    - Hàng 2 (index 1): Cột 2,3 = dấu [,], các cột = số  
+    - Hàng 3-12 (index 2-11): Các cột = số 0-9
+    """
+    circles = detect_circles_small(gray_crop)
+    grid_rows = cluster_to_grid(circles)
+
+    if len(grid_rows) < 12:
+        return "?" * n_digits
+    
+    sign_row_minus = grid_rows[0]
+    sign_row_comma = grid_rows[1]
+    digit_rows = grid_rows[2:12]
+
+    all_circles = [c for row in digit_rows for c in row]
+    all_circles_sorted = sorted(all_circles, key=lambda c: c[0])
+
+    col_centers = []
+    col_tol = 12
+    for c in all_circles_sorted:
+        x, y, r = c
+        placed = False
+        for col in col_centers:
+            if abs(x - col["x"]) <= col_tol:
+                col["xs"].append(x)
+                col["x"] = sum(col["xs"]) / len(col["xs"])
+                placed = True
                 break
-    return prefix + "".join(d if d else "?" for d in digits)
+        if not placed:
+            col_centers.append({"x": x, "xs": [x]})
+
+    col_centers = sorted(col_centers, key=lambda c: c["x"])
+    col_centers = col_centers[:n_digits] if len(col_centers) >= n_digits else col_centers
+    col_xs = [c["x"] for c in col_centers]
+
+    if len(col_xs) < n_digits:
+        return "?" * n_digits
+
+    result = []
+    SPECIAL_THRESHOLD = 0.40
+
+    for col_idx in range(n_digits):
+        col_x = col_xs[col_idx]
+        found = None
+
+        # Cột 1: kiểm tra dấu [-]
+        if col_idx == 0:
+            for (x, y, r) in sign_row_minus:
+                if abs(x - col_x) <= col_tol:
+                    ratio = fill_ratio(binary_crop, x, y, r)
+                    if ratio >= SPECIAL_THRESHOLD:
+                        found = "-"
+                        break
+
+        # Cột 2, 3: kiểm tra dấu [,]
+        if found is None and col_idx in (1, 2):
+            for (x, y, r) in sign_row_comma:
+                if abs(x - col_x) <= col_tol:
+                    ratio = fill_ratio(binary_crop, x, y, r)
+                    if ratio >= SPECIAL_THRESHOLD:
+                        found = ","
+                        break
+
+        # Đọc số từ hàng 0-9
+        if found is None:
+            best_ratio = 0.0
+            best_digit = None
+            second_ratio = 0.0
+
+            for digit_val, row in enumerate(digit_rows):
+                for (x, y, r) in row:
+                    if abs(x - col_x) <= col_tol:
+                        ratio = fill_ratio(binary_crop, x, y, r)
+                        if ratio > best_ratio:
+                            second_ratio = best_ratio
+                            best_ratio = ratio
+                            best_digit = str(digit_val)
+                        elif ratio > second_ratio:
+                            second_ratio = ratio
+
+            MARGIN = 1.8
+            if best_digit is None or best_ratio < fill_threshold:
+                found = "?"
+            elif second_ratio > 0 and best_ratio < MARGIN * second_ratio:
+                found = "?"
+            else:
+                found = best_digit
+
+        result.append(found)
+
+    return "".join(result)
+
+
+def clean_phan3_result(raw: str) -> str:
+    """
+    Làm sạch kết quả Phần III theo quy tắc:
+    1. Bỏ tất cả dấu ?: 2,3?2 -> 2,32
+    2. Chuyển sang số thực để loại bỏ hoàn toàn số 0 ở đầu
+    3. Chuyển lại về string
+    """
+    if not raw:
+        return raw
+    
+    # Bước 1: Loại bỏ tất cả dấu ?
+    result = raw.replace("?", "")
+    
+    if not result:
+        return result
+    
+    # Bước 2: Chuyển sang số thực rồi về lại string để loại bỏ số 0 thừa
+    try:
+        # Thay dấu , thành . để parse float
+        num_str = result.replace(",", ".")
+        
+        # Kiểm tra nếu là số hợp lệ
+        float_val = float(num_str)
+        
+        # Chuyển về string, bỏ phần thập phân .0 nếu là số nguyên
+        result = str(float_val)
+        
+        # Nếu là số nguyên (không có phần thập phân có nghĩa), bỏ .0
+        if result.endswith(".0"):
+            result = result[:-2]
+            
+    except ValueError:
+        # Nếu không parse được (ví dụ chỉ có dấu - hoặc ,), giữ nguyên
+        pass
+    
+    return result
+
+
 def read_digit_grid_fixed(binary_crop, n_digits, n_rows=10, fill_threshold=0.35,
                            top_skip_ratio=0.18):
     h, w = binary_crop.shape

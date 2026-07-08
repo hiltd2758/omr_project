@@ -51,6 +51,11 @@ def process_image(image: np.ndarray):
         "warped": warped,
         "segments": segments,
         "result": result,
+        # Các bước tiền xử lý
+        "gray": pre["gray"],
+        "denoised": pre["denoised"],
+        "equalized": pre["equalized"],
+        "binary": pre["binary"],
     }
 
 
@@ -223,41 +228,115 @@ elif page == "Chấm bài":
                 status.success("Chấm bài thành công!")
 
                 st.subheader("Quy trình xử lý")
+
+                st.markdown("**1. Tiền xử lý ảnh**")
+                p1, p2, p3, p4 = st.columns(4)
+                with p1:
+                    st.image(cv2.cvtColor(out["gray"], cv2.COLOR_BGR2RGB),
+                             caption="1.1 Ảnh xám (Grayscale)")
+                with p2:
+                    st.image(cv2.cvtColor(out["denoised"], cv2.COLOR_GRAY2BGR) if len(out["denoised"].shape) == 2 else out["denoised"],
+                             caption="1.2 Khử nhiễu (Gaussian Blur)")
+                with p3:
+                    st.image(cv2.cvtColor(out["equalized"], cv2.COLOR_GRAY2BGR) if len(out["equalized"].shape) == 2 else out["equalized"],
+                             caption="1.3 Cân bằng sáng (CLAHE)")
+                with p4:
+                    st.image(cv2.cvtColor(out["binary"], cv2.COLOR_GRAY2BGR) if len(out["binary"].shape) == 2 else out["binary"],
+                             caption="1.4 Nhị phân hóa (Adaptive Threshold)")
+
+                st.markdown("**2. Phát hiện & Chỉnh phối cảnh**")
                 c1, c2 = st.columns(2)
                 with c1:
                     st.image(cv2.cvtColor(out["marker_debug"], cv2.COLOR_BGR2RGB),
-                              caption="Phát hiện marker 4 góc")
+                             caption="2.1 Phát hiện marker 4 góc")
                 with c2:
                     st.image(cv2.cvtColor(out["warped"], cv2.COLOR_BGR2RGB),
-                              caption="Ảnh sau khi chỉnh phối cảnh")
+                             caption="2.2 Ảnh sau chỉnh phối cảnh (Warp)")
 
-                st.subheader("Kết quả nhận dạng")
-                r1, r2 = st.columns(2)
-                r1.metric("Số báo danh (SBD)", result.get("sbd", "?"))
-                r2.metric("Mã đề", result.get("made", "?"))
+                st.markdown("**3. Phân đoạn vùng (Segmentation)**")
 
+                # Nhóm các vùng theo loại
+                sbd_crop = out["segments"].get("sbd")
+                made_crop = out["segments"].get("made")
+                phan1_crops = {k: v for k, v in out["segments"].items() if k.startswith("phan1")}
+                phan2_crops = {k: v for k, v in out["segments"].items() if k.startswith("phan2")}
+                phan3_crops = {k: v for k, v in out["segments"].items() if k.startswith("phan3")}
+
+                # Hiển thị SBD và Mã đề
+                if sbd_crop is not None or made_crop is not None:
+                    sbd_made_cols = st.columns(2)
+                    if sbd_crop is not None:
+                        with sbd_made_cols[0]:
+                            st.image(cv2.cvtColor(sbd_crop, cv2.COLOR_BGR2RGB),
+                                     caption="Số báo danh (SBD)", width=250)
+                    if made_crop is not None:
+                        with sbd_made_cols[1]:
+                            st.image(cv2.cvtColor(made_crop, cv2.COLOR_BGR2RGB),
+                                     caption="Mã đề", width=250)
+
+                # Hiển thị Phần I - 40 câu trắc nghiệm
+                if phan1_crops:
+                    st.markdown("**Phần I — 40 câu trắc nghiệm**")
+                    phan1_list = list(phan1_crops.items())
+                    for i in range(0, len(phan1_list), 5):
+                        row_crops = phan1_list[i:i+5]
+                        cols = st.columns(5)
+                        for j, (name, crop) in enumerate(row_crops):
+                            with cols[j]:
+                                st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
+                                         caption=name, width=120)
+
+                # Hiển thị Phần II - 10 câu Đúng/Sai
+                if phan2_crops:
+                    st.markdown("**Phần II — 10 câu Đúng/Sai**")
+                    phan2_list = list(phan2_crops.items())
+                    for i in range(0, len(phan2_list), 5):
+                        row_crops = phan2_list[i:i+5]
+                        cols = st.columns(5)
+                        for j, (name, crop) in enumerate(row_crops):
+                            with cols[j]:
+                                st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
+                                         caption=name, width=120)
+
+                # Hiển thị Phần III - 6 câu điền số
+                if phan3_crops:
+                    st.markdown("**Phần III — 6 câu điền số**")
+                    phan3_list = list(phan3_crops.items())
+                    cols = st.columns(6)
+                    for j, (name, crop) in enumerate(phan3_list):
+                        with cols[j]:
+                            st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
+                                     caption=name, width=150)
+
+                st.markdown("**4. Nhận dạng (Recognition)**")
+
+                # Hiển thị kết quả nhận dạng
+                res_col1, res_col2 = st.columns(2)
+                res_col1.metric("Số báo danh (SBD)", result.get("sbd", "?"))
+                res_col2.metric("Mã đề", result.get("made", "?"))
+
+                # Phần I - Trắc nghiệm
                 st.markdown("**Phần I — Trắc nghiệm A/B/C/D**")
-                st.dataframe(
-                    [{"Câu": k, "Đáp án": v if v else "(bỏ trống)"}
-                     for k, v in result.get("phan1", {}).items()],
-                    use_container_width=True, hide_index=True,
-                )
+                phan1_data = [{"Câu": k, "Đáp án": v if v else "(bỏ trống)"}
+                              for k, v in sorted(result.get("phan1", {}).items())]
+                if phan1_data:
+                    st.dataframe(phan1_data, use_container_width=True, hide_index=True)
 
+                # Phần II - Đúng/Sai
                 st.markdown("**Phần II — Đúng/Sai**")
-                for cau, ans in result.get("phan2", {}).items():
-                    st.write(f"Câu {cau}: " + ", ".join(a if a else "(bỏ trống)" for a in ans))
+                phan2_data = [{"Câu": k, "Ý 1": ans[0] if len(ans) > 0 else "",
+                               "Ý 2": ans[1] if len(ans) > 1 else "",
+                               "Ý 3": ans[2] if len(ans) > 2 else "",
+                               "Ý 4": ans[3] if len(ans) > 3 else ""}
+                              for k, ans in sorted(result.get("phan2", {}).items())]
+                if phan2_data:
+                    st.dataframe(phan2_data, use_container_width=True, hide_index=True)
 
+                # Phần III - Điền số
                 st.markdown("**Phần III — Điền số**")
-                st.dataframe(
-                    [{"Câu": k, "Đáp số": v} for k, v in result.get("phan3", {}).items()],
-                    use_container_width=True, hide_index=True,
-                )
-
-                with st.expander("Xem chi tiết các vùng đã tách (debug)"):
-                    cols = st.columns(4)
-                    for i, (name, crop) in enumerate(out["segments"].items()):
-                        with cols[i % 4]:
-                            st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB), caption=name)
+                phan3_data = [{"Câu": k, "Đáp số": v} for k, v in sorted(result.get("phan3", {}).items())]
+                if phan3_data:
+                    st.dataframe(phan3_data, use_container_width=True, hide_index=True)
 
                 # ---- Chấm điểm nếu đã có đáp án chuẩn ----
                 if st.session_state.answer_key:
