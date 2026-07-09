@@ -5,6 +5,7 @@ Giao diện Web Demo hệ thống OMR (Streamlit)
 - 3 trang: Dashboard, Chấm bài, Kết quả.
 - Luồng xử lý: preprocessing -> detection (marker) -> perspective (warp)
   -> segmentation (tách vùng) -> recognition (nhận dạng SBD/Mã đề/Đáp án)
+  -> XÁC NHẬN / CHỈNH SỬA đáp án (nếu hệ thống nhận diện sai)
   -> grading (chấm điểm theo đáp án chuẩn, tùy chọn) -> export (xuất Excel)
 - Lịch sử kết quả được lưu bền vững vào SQLite (modules/database.py) thay vì
   session_state, nên không bị mất khi reload trang hoặc restart app.
@@ -13,6 +14,7 @@ Giao diện Web Demo hệ thống OMR (Streamlit)
 import os
 import sys
 import json
+import copy
 
 import cv2
 import numpy as np
@@ -30,13 +32,21 @@ from recognition import recognize_full_sheet
 from grading import grade_submission
 from export import export_excel_bytes, history_to_dataframe, parse_answer_key_file
 from database import init_db, insert_result, get_all_results, delete_all
-
+from preprocessing import preprocess_pipeline, binarize
 st.set_page_config(page_title="Hệ thống OMR", layout="wide", page_icon="📝")
 
 init_db()  # Đảm bảo bảng SQLite đã tồn tại trước khi dùng
 
 if "answer_key" not in st.session_state:
     st.session_state.answer_key = None      # đáp án chuẩn (tùy chọn, vẫn giữ trong session)
+if "pending_out" not in st.session_state:
+    st.session_state.pending_out = None       # kết quả xử lý ảnh (out) đang chờ xác nhận
+if "pending_result" not in st.session_state:
+    st.session_state.pending_result = None    # bản kết quả nhận dạng CÓ THỂ CHỈNH SỬA
+if "pending_file_name" not in st.session_state:
+    st.session_state.pending_file_name = None
+if "confirmed" not in st.session_state:
+    st.session_state.confirmed = False
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +101,13 @@ def answer_key_to_dataframe(key: dict) -> pd.DataFrame:
     for cau, dap in sorted(key.get("phan3", {}).items()):
         rows.append({"Phần": "III", "Câu": cau, "Đáp án": dap})
     return pd.DataFrame(rows)
+
+
+def reset_pending():
+    st.session_state.pending_out = None
+    st.session_state.pending_result = None
+    st.session_state.pending_file_name = None
+    st.session_state.confirmed = False
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +228,11 @@ elif page == "Chấm bài":
                                       type=["jpg", "jpeg", "png"])
 
     if uploaded_file is not None:
+
+        # Nếu người dùng đổi file mới thì reset trạng thái xác nhận cũ
+        if st.session_state.pending_file_name != uploaded_file.name:
+            reset_pending()
+
         file_bytes = np.frombuffer(uploaded_file.read(), dtype=np.uint8)
         image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
@@ -220,134 +242,209 @@ elif page == "Chấm bài":
 
         st.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", width=350)
 
-        if st.button("Thực hiện chấm bài", type="primary"):
-            status = st.empty()
-            try:
-                status.info("Đang tiền xử lý ảnh...")
-                status.info("Đang phát hiện marker 4 góc và chỉnh phối cảnh...")
-                out = process_image(image)
-                status.info("Đang phân đoạn và nhận dạng đáp án...")
-                result = out["result"]
-                status.success("Chấm bài thành công!")
+        # --------------------------------------------------------------
+        # BƯỚC 1: CHẠY PIPELINE NHẬN DẠNG (chỉ chạy khi chưa có kết quả
+        # chờ xác nhận cho đúng file này)
+        # --------------------------------------------------------------
+        if st.session_state.pending_out is None:
+            if st.button("Thực hiện nhận dạng", type="primary"):
+                status = st.empty()
+                try:
+                    status.info("Đang tiền xử lý ảnh...")
+                    status.info("Đang phát hiện marker 4 góc và chỉnh phối cảnh...")
+                    out = process_image(image)
+                    status.info("Đang phân đoạn và nhận dạng đáp án...")
+                    status.success("Nhận dạng xong! Vui lòng kiểm tra và xác nhận đáp án bên dưới.")
 
-                st.subheader("Quy trình xử lý")
+                    st.session_state.pending_out = out
+                    # Bản sao có thể chỉnh sửa, tách biệt với kết quả gốc do máy nhận dạng
+                    st.session_state.pending_result = copy.deepcopy(out["result"])
+                    st.session_state.pending_file_name = uploaded_file.name
+                    st.session_state.confirmed = False
+                    st.rerun()
 
-                st.markdown("**1. Tiền xử lý ảnh**")
-                p1, p2, p3, p4 = st.columns(4)
-                with p1:
-                    st.image(cv2.cvtColor(out["gray"], cv2.COLOR_BGR2RGB),
-                             caption="1.1 Ảnh xám (Grayscale)")
-                with p2:
-                    st.image(cv2.cvtColor(out["denoised"], cv2.COLOR_GRAY2BGR) if len(out["denoised"].shape) == 2 else out["denoised"],
-                             caption="1.2 Khử nhiễu (Gaussian Blur)")
-                with p3:
-                    st.image(cv2.cvtColor(out["equalized"], cv2.COLOR_GRAY2BGR) if len(out["equalized"].shape) == 2 else out["equalized"],
-                             caption="1.3 Cân bằng sáng (CLAHE)")
-                with p4:
-                    st.image(cv2.cvtColor(out["binary"], cv2.COLOR_GRAY2BGR) if len(out["binary"].shape) == 2 else out["binary"],
-                             caption="1.4 Nhị phân hóa (Adaptive Threshold)")
+                except ValueError as e:
+                    status.error(f"Lỗi xử lý ảnh: {e}")
+                except Exception as e:
+                    status.error(f"Lỗi không xác định: {e}")
+            else:
+                st.info("Nhấn **Thực hiện nhận dạng** để bắt đầu.")
 
-                st.markdown("**2. Phát hiện & Chỉnh phối cảnh**")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.image(cv2.cvtColor(out["marker_debug"], cv2.COLOR_BGR2RGB),
-                             caption="2.1 Phát hiện marker 4 góc")
-                with c2:
-                    st.image(cv2.cvtColor(out["warped"], cv2.COLOR_BGR2RGB),
-                             caption="2.2 Ảnh sau chỉnh phối cảnh (Warp)")
+        # --------------------------------------------------------------
+        # BƯỚC 2: HIỂN THỊ CÁC BƯỚC XỬ LÝ + FORM XÁC NHẬN / CHỈNH SỬA
+        # --------------------------------------------------------------
+        if st.session_state.pending_out is not None:
+            out = st.session_state.pending_out
+            edit_result = st.session_state.pending_result
 
-                st.markdown("**3. Phân đoạn vùng (Segmentation)**")
+            st.subheader("Quy trình xử lý")
 
-                # Nhóm các vùng theo loại
-                sbd_crop = out["segments"].get("sbd")
-                made_crop = out["segments"].get("made")
-                phan1_crops = {k: v for k, v in out["segments"].items() if k.startswith("phan1")}
-                phan2_crops = {k: v for k, v in out["segments"].items() if k.startswith("phan2")}
-                phan3_crops = {k: v for k, v in out["segments"].items() if k.startswith("phan3")}
+            st.markdown("**1. Tiền xử lý ảnh**")
+            p1, p2, p3, p4 = st.columns(4)
+            with p1:
+                st.image(cv2.cvtColor(out["gray"], cv2.COLOR_BGR2RGB),
+                         caption="1.1 Ảnh xám (Grayscale)")
+            with p2:
+                st.image(cv2.cvtColor(out["denoised"], cv2.COLOR_GRAY2BGR) if len(out["denoised"].shape) == 2 else out["denoised"],
+                         caption="1.2 Khử nhiễu (Gaussian Blur)")
+            with p3:
+                st.image(cv2.cvtColor(out["equalized"], cv2.COLOR_GRAY2BGR) if len(out["equalized"].shape) == 2 else out["equalized"],
+                         caption="1.3 Cân bằng sáng (CLAHE)")
+            with p4:
+                st.image(cv2.cvtColor(out["binary"], cv2.COLOR_GRAY2BGR) if len(out["binary"].shape) == 2 else out["binary"],
+                         caption="1.4 Nhị phân hóa (Adaptive Threshold)")
+            st.markdown("**So sánh nhị phân hóa: Adaptive Threshold vs Otsu**")
+            binary_adaptive = binarize(out["equalized"], method="adaptive")
+            binary_otsu = binarize(out["equalized"], method="otsu")
 
-                # Hiển thị SBD và Mã đề
-                if sbd_crop is not None or made_crop is not None:
-                    sbd_made_cols = st.columns(2)
-                    if sbd_crop is not None:
-                        with sbd_made_cols[0]:
-                            st.image(cv2.cvtColor(sbd_crop, cv2.COLOR_BGR2RGB),
-                                     caption="Số báo danh (SBD)", width=250)
-                    if made_crop is not None:
-                        with sbd_made_cols[1]:
-                            st.image(cv2.cvtColor(made_crop, cv2.COLOR_BGR2RGB),
-                                     caption="Mã đề", width=250)
+            cmp1, cmp2 = st.columns(2)
+            with cmp1:
+                st.image(binary_adaptive, caption="Adaptive Threshold (đang dùng trong pipeline)")
+                ok1, buf1 = cv2.imencode(".png", binary_adaptive)
+                st.download_button(
+                    "Tải ảnh Adaptive Threshold",
+                    data=buf1.tobytes(),
+                    file_name=f"{uploaded_file.name}_adaptive.png",
+                    mime="image/png",
+                    key="dl_adaptive",
+                )
+            with cmp2:
+                st.image(binary_otsu, caption="Otsu (tham khảo)")
+                ok2, buf2 = cv2.imencode(".png", binary_otsu)
+                st.download_button(
+                    "Tải ảnh Otsu",
+                    data=buf2.tobytes(),
+                    file_name=f"{uploaded_file.name}_otsu.png",
+                    mime="image/png",
+                    key="dl_otsu",
+                )
 
-                # Hiển thị Phần I - 40 câu trắc nghiệm
-                if phan1_crops:
-                    st.markdown("**Phần I — 40 câu trắc nghiệm**")
-                    phan1_list = list(phan1_crops.items())
-                    for i in range(0, len(phan1_list), 5):
-                        row_crops = phan1_list[i:i+5]
-                        cols = st.columns(5)
-                        for j, (name, crop) in enumerate(row_crops):
-                            with cols[j]:
-                                st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
-                                         caption=name, width=120)
+            st.caption(
+                f"Số pixel trắng (vùng tô/nét) — Adaptive: {int(np.sum(binary_adaptive == 255))} | "
+                f"Otsu: {int(np.sum(binary_otsu == 255))}"
+            )
+            st.markdown("**2. Phát hiện & Chỉnh phối cảnh**")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.image(cv2.cvtColor(out["marker_debug"], cv2.COLOR_BGR2RGB),
+                         caption="2.1 Phát hiện marker 4 góc")
+            with c2:
+                st.image(cv2.cvtColor(out["warped"], cv2.COLOR_BGR2RGB),
+                         caption="2.2 Ảnh sau chỉnh phối cảnh (Warp)")
 
-                # Hiển thị Phần II - 10 câu Đúng/Sai
-                if phan2_crops:
-                    st.markdown("**Phần II — 10 câu Đúng/Sai**")
-                    phan2_list = list(phan2_crops.items())
-                    for i in range(0, len(phan2_list), 5):
-                        row_crops = phan2_list[i:i+5]
-                        cols = st.columns(5)
-                        for j, (name, crop) in enumerate(row_crops):
-                            with cols[j]:
-                                st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
-                                         caption=name, width=120)
+            st.markdown("**3. Phân đoạn vùng (Segmentation)**")
 
-                # Hiển thị Phần III - 6 câu điền số
-                if phan3_crops:
-                    st.markdown("**Phần III — 6 câu điền số**")
-                    phan3_list = list(phan3_crops.items())
-                    cols = st.columns(6)
-                    for j, (name, crop) in enumerate(phan3_list):
+            sbd_crop = out["segments"].get("sbd")
+            made_crop = out["segments"].get("made")
+            phan1_crops = {k: v for k, v in out["segments"].items() if k.startswith("phan1")}
+            phan2_crops = {k: v for k, v in out["segments"].items() if k.startswith("phan2")}
+            phan3_crops = {k: v for k, v in out["segments"].items() if k.startswith("phan3")}
+
+            if sbd_crop is not None or made_crop is not None:
+                sbd_made_cols = st.columns(2)
+                if sbd_crop is not None:
+                    with sbd_made_cols[0]:
+                        st.image(cv2.cvtColor(sbd_crop, cv2.COLOR_BGR2RGB),
+                                 caption="Số báo danh (SBD)", width=250)
+                if made_crop is not None:
+                    with sbd_made_cols[1]:
+                        st.image(cv2.cvtColor(made_crop, cv2.COLOR_BGR2RGB),
+                                 caption="Mã đề", width=250)
+
+            if phan1_crops:
+                st.markdown("**Phần I — 40 câu trắc nghiệm**")
+                phan1_list = list(phan1_crops.items())
+                for i in range(0, len(phan1_list), 5):
+                    row_crops = phan1_list[i:i+5]
+                    cols = st.columns(5)
+                    for j, (name, crop) in enumerate(row_crops):
                         with cols[j]:
                             st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
-                                     caption=name, width=150)
+                                     caption=name, width=120)
 
-                st.markdown("**4. Nhận dạng (Recognition)**")
+            if phan2_crops:
+                st.markdown("**Phần II — 10 câu Đúng/Sai**")
+                phan2_list = list(phan2_crops.items())
+                for i in range(0, len(phan2_list), 5):
+                    row_crops = phan2_list[i:i+5]
+                    cols = st.columns(5)
+                    for j, (name, crop) in enumerate(row_crops):
+                        with cols[j]:
+                            st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
+                                     caption=name, width=120)
 
-                # Hiển thị kết quả nhận dạng
-                res_col1, res_col2 = st.columns(2)
-                res_col1.metric("Số báo danh (SBD)", result.get("sbd", "?"))
-                res_col2.metric("Mã đề", result.get("made", "?"))
+            if phan3_crops:
+                st.markdown("**Phần III — 6 câu điền số**")
+                phan3_list = list(phan3_crops.items())
+                cols = st.columns(6)
+                for j, (name, crop) in enumerate(phan3_list):
+                    with cols[j]:
+                        st.image(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB),
+                                 caption=name, width=150)
 
-                # Phần I - Trắc nghiệm
-                st.markdown("**Phần I — Trắc nghiệm A/B/C/D**")
-                phan1_data = [{"Câu": k, "Đáp án": v if v else "(bỏ trống)"}
-                              for k, v in sorted(result.get("phan1", {}).items())]
-                if phan1_data:
-                    st.dataframe(phan1_data, use_container_width=True, hide_index=True)
+            # ------------------------------------------------------------
+            # BƯỚC XÁC NHẬN / CHỈNH SỬA ĐÁP ÁN NHẬN DẠNG
+            # ------------------------------------------------------------
+            st.markdown("---")
+            st.markdown("**4. Nhận dạng — Xác nhận hoặc chỉnh sửa nếu chưa chính xác**")
+            st.caption("Hệ thống nhận dạng bằng thuật toán xử lý ảnh nên có thể sai lệch. "
+                       "Vui lòng kiểm tra và sửa lại các ô bên dưới trước khi xác nhận.")
 
-                # Phần II - Đúng/Sai
-                st.markdown("**Phần II — Đúng/Sai**")
-                phan2_data = [{"Câu": k, "Ý 1": ans[0] if len(ans) > 0 else "",
-                               "Ý 2": ans[1] if len(ans) > 1 else "",
-                               "Ý 3": ans[2] if len(ans) > 2 else "",
-                               "Ý 4": ans[3] if len(ans) > 3 else ""}
-                              for k, ans in sorted(result.get("phan2", {}).items())]
-                if phan2_data:
-                    st.dataframe(phan2_data, use_container_width=True, hide_index=True)
+            res_col1, res_col2 = st.columns(2)
+            edit_result["sbd"] = res_col1.text_input(
+                "Số báo danh (SBD)", value=str(edit_result.get("sbd", "")), key="edit_sbd")
+            edit_result["made"] = res_col2.text_input(
+                "Mã đề", value=str(edit_result.get("made", "")), key="edit_made")
 
-                # Phần III - Điền số
-                st.markdown("**Phần III — Điền số**")
-                phan3_data = [{"Câu": k, "Đáp số": v} for k, v in sorted(result.get("phan3", {}).items())]
-                if phan3_data:
-                    st.dataframe(phan3_data, use_container_width=True, hide_index=True)
+            st.markdown("**Phần I — Trắc nghiệm A/B/C/D**")
+            phan1_items = sorted(edit_result.get("phan1", {}).items())
+            for i in range(0, len(phan1_items), 5):
+                cols = st.columns(5)
+                for j, (cau, dap) in enumerate(phan1_items[i:i+5]):
+                    with cols[j]:
+                        edit_result["phan1"][cau] = st.text_input(
+                            f"Câu {cau}", value=(dap or ""), key=f"edit_p1_{cau}",
+                            max_chars=1).strip().upper()
 
-                # ---- Chấm điểm nếu đã có đáp án chuẩn ----
+            st.markdown("**Phần II — Đúng/Sai (Đ/S x4 ý)**")
+            for cau, ans in sorted(edit_result.get("phan2", {}).items()):
+                cols = st.columns(5)
+                cols[0].markdown(f"Câu {cau}")
+                new_ans = []
+                for i in range(4):
+                    val = ans[i] if i < len(ans) else ""
+                    new_ans.append(
+                        cols[i + 1].text_input(
+                            f"Ý {i+1} (câu {cau})", value=val, key=f"edit_p2_{cau}_{i}",
+                            max_chars=1, label_visibility="collapsed").strip().upper()
+                    )
+                edit_result["phan2"][cau] = new_ans
+
+            st.markdown("**Phần III — Điền số**")
+            phan3_items = sorted(edit_result.get("phan3", {}).items())
+            cols = st.columns(6)
+            for j, (cau, dap) in enumerate(phan3_items):
+                with cols[j % 6]:
+                    edit_result["phan3"][cau] = st.text_input(
+                        f"Câu {cau}", value=str(dap or ""), key=f"edit_p3_{cau}")
+
+            st.session_state.pending_result = edit_result
+
+            action_col1, action_col2 = st.columns(2)
+            confirm_clicked = action_col1.button(
+                "Xác nhận đáp án và chấm điểm", type="primary")
+            redo_clicked = action_col2.button("Làm lại (nhận dạng lại từ đầu)")
+
+            if redo_clicked:
+                reset_pending()
+                st.rerun()
+
+            if confirm_clicked:
+                final_result = st.session_state.pending_result
+
                 if st.session_state.answer_key:
-                    graded = grade_submission(result, st.session_state.answer_key)
+                    graded = grade_submission(final_result, st.session_state.answer_key)
                     graded["ten_file"] = uploaded_file.name
-                    st.write("DEBUG - Chi tiết Phần I:", graded["chi_tiet"]["phan1"])
-                    st.write("DEBUG - Chi tiết Phần II:", graded["chi_tiet"]["phan2"], "(Raw:", graded.get("diem_phan2_raw", 0), "→ Quy đổi:", graded["diem_phan2"], ")")
-                    st.write("DEBUG - Chi tiết Phần III:", graded["chi_tiet"]["phan3"])
                     st.subheader("Điểm số")
                     g1, g2, g3, g4 = st.columns(4)
                     g1.metric("Phần I", graded["diem_phan1"])
@@ -355,16 +452,16 @@ elif page == "Chấm bài":
                     g3.metric("Phần III", graded["diem_phan3"])
                     g4.metric("Tổng điểm", graded["tong_diem"])
                     insert_result(graded)
-                    st.success("Đã lưu kết quả vào cơ sở dữ liệu (xem tại trang Kết quả).")
+                    st.success("Đã xác nhận đáp án và lưu kết quả vào cơ sở dữ liệu "
+                               "(xem tại trang Kết quả).")
                 else:
-                    st.info("Chưa có đáp án chuẩn nên chỉ hiển thị kết quả nhận dạng, "
-                            "chưa tính điểm.")
+                    st.info("Chưa có đáp án chuẩn nên chỉ lưu kết quả nhận dạng đã xác nhận, "
+                            "chưa tính điểm. Thiết lập đáp án chuẩn ở phần trên để chấm điểm.")
 
-            except ValueError as e:
-                status.error(f"Lỗi xử lý ảnh: {e}")
-            except Exception as e:
-                status.error(f"Lỗi không xác định: {e}")
+                reset_pending()
+
     else:
+        reset_pending()
         st.info("Vui lòng tải lên một ảnh phiếu trả lời để bắt đầu.")
 
 

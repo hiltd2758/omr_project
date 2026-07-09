@@ -9,7 +9,10 @@
   - [Giới thiệu](#giới-thiệu)
   - [Tính năng chính](#tính-năng-chính)
   - [Công nghệ sử dụng](#công-nghệ-sử-dụng)
+  - [Lý do lựa chọn công nghệ](#lý-do-lựa-chọn-công-nghệ)
+    - [So sánh Adaptive Threshold và Otsu](#so-sánh-adaptive-threshold-và-otsu)
   - [Kiến trúc tổng thể](#kiến-trúc-tổng-thể)
+  - [Chi tiết pipeline xử lý](#chi-tiết-pipeline-xử-lý)
   - [Cấu trúc thư mục](#cấu-trúc-thư-mục)
   - [Luồng hoạt động](#luồng-hoạt-động)
   - [Yêu cầu hệ thống](#yêu-cầu-hệ-thống)
@@ -46,6 +49,32 @@ Toàn bộ pipeline nhận dạng sử dụng các thuật toán xử lý ảnh 
 | Xử lý dữ liệu / bảng điểm | Pandas |
 | Xuất file Excel | openpyxl |
 
+## Lý do lựa chọn công nghệ
+
+| Công nghệ | Lý do chọn |
+|---|---|
+| OpenCV | Cung cấp đầy đủ các thuật toán xử lý ảnh cổ điển cần thiết (threshold, contour, Hough Circle) mà không cần huấn luyện mô hình, phù hợp bài toán OMR có cấu trúc phiếu cố định |
+| Adaptive Threshold (thay vì Otsu) | Ảnh phiếu trả lời được chụp bằng điện thoại nên ánh sáng không đều giữa các vùng (bóng đổ, góc chụp). Adaptive Threshold tính ngưỡng nhị phân hóa cục bộ theo từng vùng nhỏ, chống chịu tốt hơn với chênh lệch ánh sáng so với Otsu vốn dùng một ngưỡng toàn cục |
+| CLAHE | Cân bằng sáng cục bộ trước khi nhị phân hóa, giảm ảnh hưởng của vùng sáng/tối không đều trên ảnh chụp |
+| imutils | Rút gọn các thao tác OpenCV thường dùng (resize, sắp xếp contour) |
+| Streamlit | Dựng giao diện web demo nhanh, phù hợp trình bày pipeline xử lý ảnh theo từng bước mà không cần viết frontend riêng |
+| Pandas | Xử lý và hiển thị dữ liệu bảng điểm, thống kê |
+| openpyxl | Đọc/ghi file Excel cho đáp án chuẩn và bảng điểm xuất ra |
+| SQLite | Lưu trữ nhẹ, không cần server riêng, phù hợp quy mô ứng dụng demo/đồ án |
+
+### So sánh Adaptive Threshold và Otsu
+
+Module `preprocessing.py` hỗ trợ cả hai phương pháp nhị phân hóa (tham số `method` trong hàm `binarize`), nhưng pipeline mặc định (`preprocess_pipeline`) sử dụng **Adaptive Threshold**.
+
+| Tiêu chí | Adaptive Threshold (đang dùng) | Otsu |
+|---|---|---|
+| Cách tính ngưỡng | Cục bộ theo từng vùng nhỏ của ảnh | Toàn cục, một ngưỡng duy nhất theo histogram |
+| Chịu ánh sáng không đều | Tốt — phù hợp ảnh chụp điện thoại có bóng đổ | Kém — dễ mất chi tiết ở vùng sáng/tối cực đoan |
+| Tốc độ xử lý | Chậm hơn Otsu | Nhanh hơn |
+| Phù hợp | Ảnh chụp thực tế, điều kiện ánh sáng thay đổi | Ảnh scan, ánh sáng đồng đều |
+
+Do phiếu trả lời trong dự án chủ yếu được chụp bằng điện thoại thay vì scan, Adaptive Threshold được chọn làm mặc định để đảm bảo độ ổn định khi nhận dạng ô tô ở các vùng ảnh có độ sáng khác nhau. Otsu vẫn được giữ lại trong code như một lựa chọn thay thế, có thể dùng khi đầu vào là ảnh scan chất lượng cao và ánh sáng đồng đều.
+
 ## Kiến trúc tổng thể
 
 Ứng dụng theo mô hình orchestration: `app.py` là lớp giao diện Streamlit, chỉ gọi tuần tự các hàm xử lý thuần túy nằm trong package `modules/`, không chứa logic xử lý ảnh.
@@ -70,6 +99,34 @@ flowchart LR
     F --> G
     G --> H
     H --> A
+```
+## Chi tiết pipeline xử lý
+
+Pipeline xử lý một ảnh phiếu trả lời gồm 6 giai đoạn tuần tự, mỗi giai đoạn tương ứng với một module trong `modules/`:
+
+| Giai đoạn | Module | Đầu vào | Đầu ra |
+|---|---|---|---|
+| 1. Tiền xử lý | `preprocessing.py` | Ảnh gốc | Ảnh xám, khử nhiễu, cân bằng sáng, ảnh nhị phân |
+| 2. Phát hiện marker | `detection.py` | Ảnh nhị phân | Tọa độ 4 marker góc |
+| 3. Chỉnh phối cảnh | `perspective.py` | Ảnh gốc + tọa độ marker | Ảnh đã warp về khung chuẩn |
+| 4. Phân đoạn vùng | `segmentation.py` | Ảnh đã warp | Các vùng cắt: SBD, Mã đề, Phần I/II/III |
+| 5. Nhận dạng | `recognition.py` | Các vùng đã cắt | Kết quả đáp án (SBD, mã đề, phần I/II/III) |
+| 6. Chấm điểm (tùy chọn) | `grading.py` | Kết quả nhận dạng + đáp án chuẩn | Điểm từng phần và tổng điểm |
+
+Kết quả chấm điểm sau đó được lưu vào SQLite qua `database.py` và có thể xuất ra Excel qua `export.py`.
+
+```mermaid
+flowchart TD
+    A[Ảnh gốc] --> B[1. Tiền xử lý]
+    B --> C[2. Phát hiện marker]
+    C --> D[3. Chỉnh phối cảnh]
+    D --> E[4. Phân đoạn vùng]
+    E --> F[5. Nhận dạng]
+    F --> G{Có đáp án chuẩn?}
+    G -->|Có| H[6. Chấm điểm]
+    G -->|Không| I[Chỉ hiển thị kết quả nhận dạng]
+    H --> J[Lưu SQLite]
+    J --> K[Xuất Excel]
 ```
 
 ## Cấu trúc thư mục
