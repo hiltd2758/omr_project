@@ -89,7 +89,8 @@ def preprocess_pipeline(image: np.ndarray, debug_dir: str = None) -> dict:
 
     return results
 
-
+def canny_edges(binary: np.ndarray, low=50, high=150) -> np.ndarray:
+    return cv2.Canny(binary, low, high)
 if __name__ == "__main__":
     # Test nhanh module độc lập
     img = cv2.imread("input/sample1.jpg")

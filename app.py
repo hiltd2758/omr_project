@@ -293,6 +293,7 @@ elif page == "Chấm bài":
             with p4:
                 st.image(cv2.cvtColor(out["binary"], cv2.COLOR_GRAY2BGR) if len(out["binary"].shape) == 2 else out["binary"],
                          caption="1.4 Nhị phân hóa (Adaptive Threshold)")
+
             st.markdown("**So sánh nhị phân hóa: Adaptive Threshold vs Otsu**")
             binary_adaptive = binarize(out["equalized"], method="adaptive")
             binary_otsu = binarize(out["equalized"], method="otsu")
@@ -332,6 +333,8 @@ elif page == "Chấm bài":
                 st.image(cv2.cvtColor(out["warped"], cv2.COLOR_BGR2RGB),
                          caption="2.2 Ảnh sau chỉnh phối cảnh (Warp)")
 
+            cnts_binary, _ = cv2.findContours(binary_adaptive, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            st.caption(f"Số contour tìm được trên ảnh nhị phân: {len(cnts_binary)}")
             st.markdown("**3. Phân đoạn vùng (Segmentation)**")
 
             sbd_crop = out["segments"].get("sbd")
@@ -402,9 +405,10 @@ elif page == "Chấm bài":
                 cols = st.columns(5)
                 for j, (cau, dap) in enumerate(phan1_items[i:i+5]):
                     with cols[j]:
-                        edit_result["phan1"][cau] = st.text_input(
+                        raw_p1 = st.text_input(
                             f"Câu {cau}", value=(dap or ""), key=f"edit_p1_{cau}",
-                            max_chars=1).strip().upper()
+                            max_chars=1)
+                        edit_result["phan1"][cau] = (raw_p1 or "").strip().upper()
 
             st.markdown("**Phần II — Đúng/Sai (Đ/S x4 ý)**")
             for cau, ans in sorted(edit_result.get("phan2", {}).items()):
@@ -413,11 +417,10 @@ elif page == "Chấm bài":
                 new_ans = []
                 for i in range(4):
                     val = ans[i] if i < len(ans) else ""
-                    new_ans.append(
-                        cols[i + 1].text_input(
-                            f"Ý {i+1} (câu {cau})", value=val, key=f"edit_p2_{cau}_{i}",
-                            max_chars=1, label_visibility="collapsed").strip().upper()
-                    )
+                    raw_p2 = cols[i + 1].text_input(
+                        f"Ý {i+1} (câu {cau})", value=val, key=f"edit_p2_{cau}_{i}",
+                        max_chars=1, label_visibility="collapsed")
+                    new_ans.append((raw_p2 or "").strip().upper())
                 edit_result["phan2"][cau] = new_ans
 
             st.markdown("**Phần III — Điền số**")
