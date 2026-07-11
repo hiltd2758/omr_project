@@ -24,15 +24,15 @@ import streamlit as st
 MODULES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modules")
 sys.path.insert(0, MODULES_DIR)
 
-from preprocessing import preprocess_pipeline
-from detection import find_corner_markers, draw_debug_markers
-from perspective import warp_perspective
-from segmentation import segment_all
-from recognition import recognize_full_sheet
-from grading import grade_submission
-from export import export_excel_bytes, history_to_dataframe, parse_answer_key_file
-from database import init_db, insert_result, get_all_results, delete_all
-from preprocessing import preprocess_pipeline, binarize
+from modules.preprocessing import preprocess_pipeline
+from modules.detection import find_corner_markers, draw_debug_markers
+from modules.perspective import warp_perspective
+from modules.segmentation import segment_all
+from modules.recognition import recognize_full_sheet
+from modules.grading import grade_submission
+from modules.export import export_excel_bytes, history_to_dataframe, parse_answer_key_file
+from modules.database import init_db, insert_result, get_all_results, delete_all
+from modules.preprocessing import preprocess_pipeline, binarize
 st.set_page_config(page_title="Hệ thống OMR", layout="wide", page_icon="📝")
 
 init_db()  # Đảm bảo bảng SQLite đã tồn tại trước khi dùng

@@ -7,6 +7,7 @@
 - [Hệ thống OMR - Chấm điểm trắc nghiệm tự động](#hệ-thống-omr---chấm-điểm-trắc-nghiệm-tự-động)
   - [Mục lục](#mục-lục)
   - [Giới thiệu](#giới-thiệu)
+  - [Phát Biểu Mục Tiêu / Giả Thuyết](#phát-biểu-mục-tiêu--giả-thuyết)
   - [Tính năng chính](#tính-năng-chính)
   - [Công nghệ sử dụng](#công-nghệ-sử-dụng)
   - [Lý do lựa chọn công nghệ](#lý-do-lựa-chọn-công-nghệ)
@@ -25,6 +26,17 @@
 Dự án xây dựng một pipeline xử lý ảnh hoàn chỉnh nhằm tự động hóa việc chấm bài thi trắc nghiệm dạng phiếu trả lời chuẩn THPT (3 phần: trắc nghiệm A/B/C/D, Đúng/Sai, điền số). Bài toán giải quyết: từ một ảnh chụp/scan phiếu trả lời, hệ thống tự động phát hiện, chỉnh phối cảnh, phân đoạn từng vùng câu hỏi, nhận dạng ô được tô và tính điểm dựa trên đáp án chuẩn, thay thế cho việc chấm thủ công.
 
 Toàn bộ pipeline nhận dạng sử dụng các thuật toán xử lý ảnh cổ điển (threshold thích ứng, phát hiện contour, Hough Circle, v.v.) thông qua OpenCV, không dùng mô hình học máy.
+
+## Phát Biểu Mục Tiêu / Giả Thuyết
+
+**Vấn đề:** Chấm bài thi trắc nghiệm THPT (3 phần: A/B/C/D, Đúng/Sai, điền số) từ ảnh chụp điện thoại của phiếu trả lời, thay thế hoàn toàn việc chấm thủ công.
+
+**Giả thuyết:** Chúng tôi dự đoán rằng pipeline xử lý ảnh truyền thống (Adaptive Threshold + Contour Detection + Hough Circle) đạt độ chính xác nhận dạng ô tô ≥ 90% trên ảnh chụp điện thoại trong điều kiện ánh sáng thông thường, vì cấu trúc phiếu trả lời cố định và đã biết trước cho phép xác định vùng xử lý chính xác mà không cần học máy. Cụ thể, Adaptive Threshold sẽ cho kết quả nhị phân hóa tốt hơn Otsu trên ảnh có ánh sáng không đều (bóng đổ, góc chụp lệch), vì ngưỡng được tính cục bộ thay vì toàn cục.
+
+**Tiêu chí thành công:**
+- Độ chính xác nhận dạng ô tô (per-bubble accuracy) ≥ 90% trên tập kiểm thử ≥ 10 phiếu thực tế.
+- Sai lệch điểm so với chấm tay ≤ 0.5 điểm trên thang 10 ở ≥ 85% số bài.
+- Adaptive Threshold cho per-bubble accuracy cao hơn Otsu ≥ 5% trên ảnh chụp điện thoại (đo trên cùng tập dữ liệu).
 
 ## Tính năng chính
 
