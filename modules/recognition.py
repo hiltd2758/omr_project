@@ -402,9 +402,15 @@ def recognize_phan3_number(gray_crop, binary_crop, n_digits=4, fill_threshold=0.
     circles = detect_circles_small(gray_crop)
     grid_rows = cluster_to_grid(circles)
 
-    if len(grid_rows) < 12:
+    n_rows = len(grid_rows)
+    print(f"[DEBUG phan3] grid_rows count = {n_rows}")
+
+    if n_rows < 12:
         return "?" * n_digits
-    
+
+    # Nếu detect thừa hàng đầu (noise), lấy 12 hàng cuối
+    grid_rows = grid_rows[-12:]
+
     sign_row_minus = grid_rows[0]
     sign_row_comma = grid_rows[1]
     digit_rows = grid_rows[2:12]
@@ -413,7 +419,9 @@ def recognize_phan3_number(gray_crop, binary_crop, n_digits=4, fill_threshold=0.
     all_circles_sorted = sorted(all_circles, key=lambda c: c[0])
 
     col_centers = []
-    col_tol = 12
+    # col_tol = 12
+    col_tol = 8
+
     for c in all_circles_sorted:
         x, y, r = c
         placed = False

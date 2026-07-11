@@ -72,7 +72,9 @@ def split_by_vertical_lines(binary_crop: np.ndarray, n_parts: int = 6):
     h, w = binary_crop.shape
 
     # Tìm các cột có mật độ đen cao (đường kẻ dọc) -> là điểm chia
-    threshold = 0.5 * h * 255
+    # threshold = 0.5 * h * 255
+    threshold = 0.4 * h * 255
+
     line_cols = np.where(col_sum > threshold)[0]
 
     # Gom các cột liền kề thành 1 đường kẻ (lấy điểm giữa)
@@ -93,7 +95,12 @@ def split_by_vertical_lines(binary_crop: np.ndarray, n_parts: int = 6):
 
     # Nếu số đoạn không đúng n_parts, chia đều theo tỉ lệ (fallback an toàn)
     if len(boundaries) - 1 != n_parts:
+        print(f"[DEBUG] fallback chia đều, lines={lines}, n={len(boundaries)-1}")
         boundaries = [int(i * w / n_parts) for i in range(n_parts + 1)]
+    else:
+        print(f"[DEBUG] boundaries OK: {boundaries}")
+
+    print(f"[DEBUG] parts widths: {[boundaries[i+1]-boundaries[i] for i in range(n_parts)]}")
 
     parts = []
     for i in range(n_parts):
@@ -148,10 +155,14 @@ def classify_and_label_boxes(boxes, img_shape):
     if len(p3) == 1:
         x, y, w, h = p3[0]
         sub_parts = split_by_vertical_lines(
-            np.zeros((h, w), dtype=np.uint8), n_parts=6  # placeholder, xem lưu ý dưới
+            np.zeros((h, w), dtype=np.uint8), n_parts=6
         )
-        for i, (sx, sy, sw, sh) in enumerate(sub_parts):
-            labeled[f"phan3_block{i+1}"] = (x + sx, y + sy, sw, sh)
+    for i, (sx, sy, sw, sh) in enumerate(sub_parts):
+            if i == 0:
+                offset = 20
+                labeled[f"phan3_block{i+1}"] = (x + sx - offset, y + sy, sw + offset, sh)
+            else:
+                labeled[f"phan3_block{i+1}"] = (x + sx, y + sy, sw, sh)
     else:
         for i, b in enumerate(p3):
             labeled[f"phan3_block{i+1}"] = b
