@@ -1,0 +1,392 @@
+[
+  {
+    "image": "student01.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 40,
+      "accuracy": 1.0
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 9
+      },
+      "B": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 10
+      },
+      "C": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 10
+      },
+      "D": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 11
+      },
+      "macro_avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    }
+  },
+  {
+    "image": "student02.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 40,
+      "accuracy": 1.0
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 9
+      },
+      "B": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 10
+      },
+      "C": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 10
+      },
+      "D": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 11
+      },
+      "macro_avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    }
+  },
+  {
+    "image": "student03.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 39,
+      "accuracy": 0.975
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 5
+      },
+      "B": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 15
+      },
+      "C": {
+        "precision": 1.0,
+        "recall": 0.9231,
+        "f1": 0.96,
+        "support": 13
+      },
+      "D": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 7
+      },
+      "macro_avg": {
+        "precision": 1.0,
+        "recall": 0.9808,
+        "f1": 0.99
+      }
+    }
+  },
+  {
+    "image": "student04.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 39,
+      "accuracy": 0.975
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 1.0,
+        "recall": 0.9231,
+        "f1": 0.96,
+        "support": 13
+      },
+      "B": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 9
+      },
+      "C": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 10
+      },
+      "D": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 8
+      },
+      "macro_avg": {
+        "precision": 1.0,
+        "recall": 0.9808,
+        "f1": 0.99
+      }
+    }
+  },
+  {
+    "image": "student05.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 38,
+      "accuracy": 0.95
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 9
+      },
+      "B": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 2
+      },
+      "C": {
+        "precision": 1.0,
+        "recall": 0.9167,
+        "f1": 0.9565,
+        "support": 12
+      },
+      "D": {
+        "precision": 1.0,
+        "recall": 0.9412,
+        "f1": 0.9697,
+        "support": 17
+      },
+      "macro_avg": {
+        "precision": 1.0,
+        "recall": 0.9645,
+        "f1": 0.9816
+      }
+    }
+  },
+  {
+    "image": "student06.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 31,
+      "accuracy": 0.775
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 1.0,
+        "recall": 0.9,
+        "f1": 0.9474,
+        "support": 10
+      },
+      "B": {
+        "precision": 0.9091,
+        "recall": 0.8333,
+        "f1": 0.8696,
+        "support": 12
+      },
+      "C": {
+        "precision": 1.0,
+        "recall": 0.7,
+        "f1": 0.8235,
+        "support": 10
+      },
+      "D": {
+        "precision": 1.0,
+        "recall": 0.625,
+        "f1": 0.7692,
+        "support": 8
+      },
+      "macro_avg": {
+        "precision": 0.9773,
+        "recall": 0.7646,
+        "f1": 0.8524
+      }
+    }
+  },
+  {
+    "image": "student07.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 35,
+      "accuracy": 0.875
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 1.0,
+        "recall": 0.9167,
+        "f1": 0.9565,
+        "support": 12
+      },
+      "B": {
+        "precision": 1.0,
+        "recall": 0.75,
+        "f1": 0.8571,
+        "support": 4
+      },
+      "C": {
+        "precision": 1.0,
+        "recall": 0.7143,
+        "f1": 0.8333,
+        "support": 7
+      },
+      "D": {
+        "precision": 1.0,
+        "recall": 0.9412,
+        "f1": 0.9697,
+        "support": 17
+      },
+      "macro_avg": {
+        "precision": 1.0,
+        "recall": 0.8306,
+        "f1": 0.9042
+      }
+    }
+  },
+  {
+    "image": "student08.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 34,
+      "accuracy": 0.85
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 3
+      },
+      "B": {
+        "precision": 1.0,
+        "recall": 0.8824,
+        "f1": 0.9375,
+        "support": 17
+      },
+      "C": {
+        "precision": 0.9167,
+        "recall": 0.7857,
+        "f1": 0.8462,
+        "support": 14
+      },
+      "D": {
+        "precision": 0.7143,
+        "recall": 0.8333,
+        "f1": 0.7692,
+        "support": 6
+      },
+      "macro_avg": {
+        "precision": 0.9078,
+        "recall": 0.8754,
+        "f1": 0.8882
+      }
+    }
+  },
+  {
+    "image": "student09.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 39,
+      "accuracy": 0.975
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 11
+      },
+      "B": {
+        "precision": 1.0,
+        "recall": 0.9286,
+        "f1": 0.963,
+        "support": 14
+      },
+      "C": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 9
+      },
+      "D": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 6
+      },
+      "macro_avg": {
+        "precision": 1.0,
+        "recall": 0.9822,
+        "f1": 0.9908
+      }
+    }
+  },
+  {
+    "image": "student10.jpg",
+    "accuracy_phan1": {
+      "total": 40,
+      "correct": 37,
+      "accuracy": 0.925
+    },
+    "prf_phan1": {
+      "A": {
+        "precision": 0.875,
+        "recall": 0.875,
+        "f1": 0.875,
+        "support": 8
+      },
+      "B": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 14
+      },
+      "C": {
+        "precision": 1.0,
+        "recall": 0.9091,
+        "f1": 0.9524,
+        "support": 11
+      },
+      "D": {
+        "precision": 1.0,
+        "recall": 0.8571,
+        "f1": 0.9231,
+        "support": 7
+      },
+      "macro_avg": {
+        "precision": 0.9688,
+        "recall": 0.9103,
+        "f1": 0.9376
+      }
+    }
+  }
+]

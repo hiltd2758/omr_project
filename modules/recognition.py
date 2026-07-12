@@ -102,7 +102,7 @@ def fill_ratio(binary_crop: np.ndarray, x, y, r):
 
 
 def recognize_answers_mcq(gray_crop, binary_crop, n_rows, n_cols, choice_labels,
-                           fill_threshold=0.35, relative_ratio=None):
+                           fill_threshold=0.30, relative_ratio=None):
     """
     Nhận dạng đáp án trắc nghiệm A/B/C/D (dùng cho Phần I).
     Cải tiến v2: Dùng relative thresholding để giảm false positive do vết chì/bóng đổ.

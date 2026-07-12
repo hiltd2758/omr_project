@@ -1,0 +1,72 @@
+[
+  {
+    "threshold": 0.2,
+    "total": 400,
+    "correct": 367,
+    "false_negative": 7,
+    "false_positive_multi": 17,
+    "other_wrong": 9,
+    "accuracy": 91.75,
+    "error_rate": 8.25
+  },
+  {
+    "threshold": 0.25,
+    "total": 400,
+    "correct": 367,
+    "false_negative": 8,
+    "false_positive_multi": 15,
+    "other_wrong": 10,
+    "accuracy": 91.75,
+    "error_rate": 8.25
+  },
+  {
+    "threshold": 0.3,
+    "total": 400,
+    "correct": 374,
+    "false_negative": 15,
+    "false_positive_multi": 5,
+    "other_wrong": 6,
+    "accuracy": 93.5,
+    "error_rate": 6.5
+  },
+  {
+    "threshold": 0.35,
+    "total": 400,
+    "correct": 372,
+    "false_negative": 19,
+    "false_positive_multi": 4,
+    "other_wrong": 5,
+    "accuracy": 93.0,
+    "error_rate": 7.0
+  },
+  {
+    "threshold": 0.4,
+    "total": 400,
+    "correct": 374,
+    "false_negative": 19,
+    "false_positive_multi": 2,
+    "other_wrong": 5,
+    "accuracy": 93.5,
+    "error_rate": 6.5
+  },
+  {
+    "threshold": 0.45,
+    "total": 400,
+    "correct": 366,
+    "false_negative": 28,
+    "false_positive_multi": 1,
+    "other_wrong": 5,
+    "accuracy": 91.5,
+    "error_rate": 8.5
+  },
+  {
+    "threshold": 0.5,
+    "total": 400,
+    "correct": 349,
+    "false_negative": 45,
+    "false_positive_multi": 1,
+    "other_wrong": 5,
+    "accuracy": 87.25,
+    "error_rate": 12.75
+  }
+]
